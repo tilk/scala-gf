@@ -2,6 +2,7 @@ package org.tilk.gf
 
 import fastparse.byte.all._
 import java.nio.charset.Charset
+import scala.collection.immutable.IntMap
 
 object Parser {
   implicit val utf8 = Charset.forName("UTF-8")
@@ -22,6 +23,7 @@ object Parser {
   def parseArray[A](ap : Parser[A]) : Parser[Vector[A]] = parseSeq(ap).map(_.toVector)
   def parseSet[A](ap : Parser[A]) : Parser[Set[A]] = parseSeq(ap).map(_.toSet)
   def parseMap[A,B](ap : Parser[A], bp : Parser[B]) : Parser[Map[A,B]] = parseSeq(ap ~ bp).map{ l => Map(l:_*) }
+  def parseIntMap[B](bp : Parser[B]) : Parser[IntMap[B]] = parseSeq(parseInt ~ bp).map{ l => IntMap(l:_*) }
   val parseString : Parser[String] = parseSeq(parseUTF8Char).map(x => Bytes.concat(x).decodeString.right.get)
   val parseByteString : Parser[Bytes] = for {
     n <- parseInt
@@ -98,12 +100,12 @@ object Parser {
     printnames <- parseMap(parseCId, parseString)
     sequences <- parseArray(parseArray(parseSymbol))
     cncfuns <- parseArray(parseCncFun)
-    lindefs <- parseMap(parseInt, parseList(parseInt))
-    linrefs <- parseMap(parseInt, parseList(parseInt))
-    productions <- parseMap(parseInt, parseSet(parseProduction))
+    lindefs <- parseIntMap(parseList(parseInt))
+    linrefs <- parseIntMap(parseList(parseInt))
+    productions <- parseIntMap(parseSet(parseProduction))
     cnccats <- parseMap(parseCId, parseCncCat)
     totalCats <- parseInt
-  } yield Concr(cflags, printnames, cncfuns, lindefs, linrefs, sequences, productions, Map.empty, Map.empty, cnccats, Map.empty, totalCats)
+  } yield Concr(cflags, printnames, cncfuns, lindefs, linrefs, sequences, productions, IntMap.empty, Map.empty, cnccats, IntMap.empty, totalCats)
   val pgfMajorVersion = 2
   val pgfMinorVersion = 1
   val parsePGF21 : Parser[PGF] = for {

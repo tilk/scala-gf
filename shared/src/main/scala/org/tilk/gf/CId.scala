@@ -1,5 +1,5 @@
 package org.tilk.gf
 
-final case class CId(value : String) {
+final case class CId(val value : String) {
   
 }

@@ -8,6 +8,7 @@ package object gf {
   type CodeLabel = Int
   type MetaId = Int
   type LIndex = Int
+  type DotPos = Int
   val fidString : FId = -1
   val fidInt : FId = -2
   val fidFloat : FId = -3
