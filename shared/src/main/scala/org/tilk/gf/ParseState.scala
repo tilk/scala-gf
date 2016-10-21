@@ -1,6 +1,7 @@
 package org.tilk.gf
 
 import scala.collection.immutable.{IntMap, SortedMap}
+import scala.util.Try
 
 object ParseState {
   type Continuation = TrieMap[Token, Set[Active]]
@@ -61,6 +62,7 @@ object ParseState {
             val acc1 = ftok_(List(tok), item.copy(ppos = item.ppos+1), acc)
             process(flit, ftok, cnc, items, (acc1, chart))
           case None => xsym match {
+            case SymAllCapit | SymBind | SymCapit | SymKS(_) => throw new Exception("Impossible")
             case SymNE => process(flit, ftok, cnc, items, ac)
             case SymSoftBind => process(flit, ftok, cnc, (item.copy(ppos = item.ppos+1)::items), ac)
             case SymSoftSpace => process(flit, ftok, cnc, (item.copy(ppos = item.ppos+1)::items), ac)
@@ -93,11 +95,47 @@ object ParseState {
                   else process(flit, ftok, cnc, items2, 
                       (acc, chart.copy(active = chart.active+((key, (set+item, new_sc.unionWith(sc, (_, a, b) => a union b)))))))
               }
-/*            case SymLit(d, r) =>
+            case SymLit(d, r) =>
               val PArg(hypos, fid) = item.args(d)
               val key = ActiveKey(fid, r)
-              val fid1 = chart.passive.get(key.makePassive(chart.offset)).getOrElse(fid)*/
-              
+              val fidp = chart.passive.get(key.makePassive(chart.offset)).getOrElse(fid)
+              chart.forest.get(fidp).map(_.collect{case PConst(_, _, ts) => ts}).getOrElse(Seq.empty).headOption match {
+                case Some(toks) => 
+                  val acc1 = ftok_(toks, item.copy(ppos = item.ppos + 1, args = item.args.updated(d, PArg(hypos, fidp))), acc)
+                  process(flit, ftok, cnc, items, (acc1, chart))
+                case None => flit(fid) match {
+                  case Some((cat, lit, toks)) =>
+                    val fidp = chart.nextId
+                    val acc1 = ftok_(toks, item.copy(ppos = item.ppos + 1, args = item.args.updated(d, PArg(hypos, fidp))), acc)
+                    val chart1 = chart.copy(
+                        passive = chart.passive+((key.makePassive(chart.offset), fidp)),
+                        forest = chart.forest+((fidp, Set(PConst(cat, lit, toks)))),
+                        nextId = chart.nextId + 1)
+                    process(flit, ftok, cnc, items, (acc1, chart1))
+                  case None => process(flit, ftok, cnc, items, ac)
+                }
+              }
+            case SymVar(d, r) =>
+              val PArg(hypos, fid0) = item.args(d)
+              val (fid1, fid2) = hypos(r)
+              val key = ActiveKey(fid1, 0)
+              val fidp = chart.passive.get(key.makePassive(chart.offset)).getOrElse(fid1)
+              chart.forest.get(fidp).map(_.collect{case PConst(_, _, ts) => ts}).getOrElse(Seq.empty).headOption match {
+                case Some(toks) =>
+                  val acc1 = ftok_(toks, item.copy(ppos = item.ppos + 1, args = item.args.updated(d, PArg(hypos.updated(r, (fidp, fid2)), fid0))), acc)
+                  process(flit, ftok, cnc, items, (acc1, chart))
+                case None => flit(fid1) match {
+                  case Some((cat, lit, toks)) =>
+                    val fidp = chart.nextId
+                    val acc1 = ftok_(toks, item.copy(ppos = item.ppos + 1, args = item.args.updated(d, PArg(hypos.updated(r, (fidp, fid2)), fid0))), acc)
+                    val chart1 = chart.copy(
+                        passive = chart.passive+((key.makePassive(chart.offset), fidp)),
+                        forest = chart.forest+((fidp, Set(PConst(cat, lit, toks)))),
+                        nextId = chart.nextId + 1)
+                    process(flit, ftok, cnc, items, (acc1, chart1))
+                  case None => process(flit, ftok, cnc, items, ac)
+                }
+              }
           }
         }
       } else chart.passive.get(item.key.makePassive(item.j)) match {
@@ -122,12 +160,20 @@ object ParseState {
           process(flit, ftok, cnc, items2.toList, (acc, chart.copy(forest = forest1)))
       }
   }
+  def getPartialSeq(seqs : Vector[Vector[Symbol]], actives : List[Chart.ActiveChart], 
+      seq : List[(Int, Vector[Symbol], List[PArg], ActiveKey)]) : List[(List[SymCat], List[PArg])] = Nil // TODO
 }
 
 final case class ParseInput(
     token : SortedMap[Token, ParseState.Continuation] => Option[ParseState.Continuation], 
     literal : FId => Option[(CId, Expr, List[Token])]
 )
+
+abstract sealed class ParseOutput
+case class ParseFailed(pos : Int) extends ParseOutput
+case class ParseTypeError(errors : List[(FId, TcError)]) extends ParseOutput
+case class ParseOk(out : List[Expr]) extends ParseOutput
+case object ParseIncomplete extends ParseOutput
 
 final case class ErrorState(abstr : Abstr, concr : Concr, chart : Chart)
 
@@ -144,6 +190,51 @@ final case class ParseState(abstr : Abstr, concr : Concr, chart : Chart, cont : 
         passive = Chart.emptyPassive, offset = chart1.offset + 1)
     if (cnt1.isEmpty) Left(ErrorState(abstr, concr, chart2))
     else Right(ParseState(abstr, concr, chart2, cnt1))
+  }
+  def getOutput(tp : Type, dp : Option[Int]) = {
+    val agenda = cont.value.map(_.toList).getOrElse(Nil)
+    def flit(fid : FId) = None
+    def ftok(toks : SortedMap[Token, ParseState.Continuation], c : ParseState.Continuation) = TrieMap(None, toks).unionWith(c, _ union _)
+    val (acc1, chart1) = ParseState.process(flit, ftok, concr, agenda, (TrieMap(None, cont.children), chart))
+    def cutAt(ppos : DotPos, toks : List[Token], seqId : SeqId) = {
+      val seq = concr.sequences(seqId)
+      val init = seq.take(ppos-1)
+      val tail = seq(ppos-1) match {
+        case SymKS(t) => List(SymKS(t)).drop(toks.length)
+        case SymKP(ts, _) => ts.reverse.drop(toks.length).reverse
+        case sym => Nil
+      }
+      init ++ tail
+    }
+    val seq = (for ((toks, set) <- acc1; item <- set) yield (item.j, cutAt(item.ppos, toks, item.seqid), item.args, item.key)).toList
+    val roots = concr.cnccats.get(tp.start) match {
+      case Some(CncCat(s, e, lbls)) => 
+        (for (cat <- s to e; lbl <- lbls.indices; fid <- chart1.passive.get(PassiveKey(cat, lbl, 0))) yield ActiveKey(fid, lbl)).toList 
+      case None => Nil
+    }
+    val froots = if (roots.isEmpty) ParseState.getPartialSeq(concr.sequences, (chart.active::chart.actives).reverse, seq)
+      else (for (ActiveKey(fid, lbl) <- roots) yield (List(SymCat(0, lbl)), List(PArg(List(), fid)))).toList 
+    val f = Forest(abstr, concr, chart1.forest, froots)
+    val xs = roots.map(ak => f.getAbsTrees(PArg(Nil, ak.fid), Some(tp), dp))
+    val es = List.concat(xs.collect { case Right(es) => es }:_*)
+    val errs = List.concat(xs.collect { case Left(es) => es }:_*)
+    val bs = f.linearizeWithBrackets(dp)
+    val res = if (!es.isEmpty) ParseOk(es)
+      else if (!errs.isEmpty) ParseTypeError(errs)
+      else ParseIncomplete
+    (res, bs)
+  }
+}
+
+object ParseInput {
+  def apply(token : Token) : ParseInput = {
+    def matchLit(t : Token)(fid : FId) =
+      if (fid == fidString) Some((cidString, ELit(LStr(t)), List(t)))
+      else if (fid == fidInt) Try(t.toInt).map { n => (cidInt, ELit(LInt(n)), List(t)) }.toOption
+      else if (fid == fidFloat) Try(t.toDouble).map { d => (cidFloat, ELit(LFlt(d)), List(t)) }.toOption
+      else if (fid == fidVar) Some((wildCId, EFun(CId(t)), List(t)))
+      else None
+    ParseInput(_.get(token), matchLit(token))
   }
 }
 

@@ -13,4 +13,9 @@ package object gf {
   val fidInt : FId = -2
   val fidFloat : FId = -3
   val fidVar : FId = -4
+  val cidString = CId("String")
+  val cidInt    = CId("Int")
+  val cidFloat  = CId("Float")
+  val cidVar    = CId("__gfVar")
+  val wildCId   = CId("_")
 }
