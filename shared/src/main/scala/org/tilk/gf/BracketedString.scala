@@ -12,3 +12,7 @@ case object BTLeafBind extends BracketedToken
 case object BTLeafSoftBind extends BracketedToken
 case object BTLeafCapit extends BracketedToken
 case class BTLeafKP(subtokens : List[BracketedToken], l : List[(List[BracketedToken], List[String])]) extends BracketedToken
+
+object BracketedToken {
+  def untoken(nw : Option[String], bss : List[BracketedToken]) : (Option[String], List[BracketedString]) = (None, Nil)
+}

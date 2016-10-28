@@ -37,10 +37,11 @@ final case class PArg(a : List[(FId, FId)], val fid : FId)
 
 abstract sealed class Symbol {
   val toToken : Option[Token] = None
+  def inc(k : Int) = this
 }
-final case class SymCat(a : Int, b : LIndex) extends Symbol
-final case class SymLit(a : Int, b : LIndex) extends Symbol
-final case class SymVar(a : Int, b : Int) extends Symbol
+final case class SymCat(d : Int, r : LIndex) extends Symbol { override def inc(k : Int) = SymCat(k+d, r) }
+final case class SymLit(d : Int, r : LIndex) extends Symbol { override def inc(k : Int) = SymLit(k+d, r) }
+final case class SymVar(d : Int, r : Int) extends Symbol { override def inc(k : Int) = SymVar(k+d, r) }
 final case class SymKS(token : Token) extends Symbol { override val toToken : Option[Token] = Some(token) }
 final case class SymKP(syms : List[Symbol], vars : List[(List[Symbol], List[String])]) extends Symbol
 final case object SymBind extends Symbol { override val toToken : Option[Token] = Some("&+") }
@@ -58,5 +59,9 @@ case class PGF(
 ) {
   def getConcrComplete(id : CId) : Option[Concr] = 
     concr.get(id).orElse(concr.get(CId(absname.value + id.value)))
+  def parse(pgf : PGF, lang : CId, typ : Type, dp : Option[Int] = Some(4), s : String) : (ParseOutput, BracketedString) = concr.get(lang) match {
+    case Some(cnc) => ParseState.parse(pgf, lang, typ, dp, s.split(' ').toList)
+    case None => throw new Exception("Unknown language: " ++ lang.value)
+  }
 }
 

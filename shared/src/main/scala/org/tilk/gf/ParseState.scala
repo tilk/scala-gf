@@ -161,7 +161,37 @@ object ParseState {
       }
   }
   def getPartialSeq(seqs : Vector[Vector[Symbol]], actives : List[Chart.ActiveChart], 
-      seq : List[(Int, Vector[Symbol], List[PArg], ActiveKey)]) : List[(List[SymCat], List[PArg])] = Nil // TODO
+      seq : List[(Int, Vector[Symbol], List[PArg], ActiveKey)]) : List[(List[Symbol], List[PArg])] = {
+    def expand(acc : Set[(Int, Vector[Symbol], List[PArg], ActiveKey)], 
+        items : List[(Int, Vector[Symbol], List[PArg], ActiveKey)]) : List[(List[Symbol], List[PArg])] = items match {
+      case Nil => for ((j, lin, args, key) <- acc.toList; if j == 0) yield (lin.toList, args)
+      case (item @ (j, lin, args, key)) :: items => 
+        if (acc(item)) expand(acc, items)
+        else {
+          val acc1 = acc + item
+          val items1 = actives(j).get(key) match {
+            case None => items
+            case Some((set, _)) => 
+              val nitems = for (Active(j1, ppos, funid, seqid, args1, key1) <- set.toList)
+                yield if (j1 < j) (j1, seqs(seqid).take(ppos).toVector ++ lin.map(_.inc(args1.length)), args1 ++ args, key1) 
+                  else (j1, lin, args, key1) 
+              nitems ++ items
+          }
+          expand(acc1, items1)
+        }
+    }
+    expand(Set.empty, seq)
+  }
+  def parse(pgf : PGF, lang : CId, typ : Type, dp : Option[Int], toks : List[Token]) = {
+    def loop(ps : ParseState, toks : List[Token]) : (ParseOutput, BracketedString) = toks match {
+      case Nil => ps.getOutput(typ, dp)
+      case t::ts => ps.next(ParseInput(t)) match {
+        case Right(ps) => loop(ps, ts)
+        case Left(es) => (ParseFailed(es.chart.offset), ps.getOutput(typ, dp)._2)
+      }
+    }
+    loop(ParseState(pgf, lang, typ), toks)
+  }
 }
 
 final case class ParseInput(
