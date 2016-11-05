@@ -27,7 +27,7 @@ final case class Scope(gamma : List[(CId, TType)]) {
     for (i <- 0 to (n-1)) yield VGen(n-i-1, Nil)
   }.toList
   def getVar(i : Int) = gamma(i)
-  def lookupVar(x : CId) = for (((y, tty), i) <- gamma.zip(0 to size); if x == y) yield (i, tty)
+  def lookupVar(x : CId) = (for (((y, tty), i) <- gamma.zip(0 to size); if x == y) yield (i, tty)).headOption
   def addScopedVar(x : CId, tty : TType) = Scope((x,tty)::gamma)
 }
 
@@ -48,7 +48,8 @@ abstract class Selector[S] {
 object Selector {
   implicit object FIdSelector extends Selector[FId] {
     def splitSelector(fid : FId) = (fid, fid)
-    def select(cid : CId, scope : Scope, x : Option[Int]) = TcM.TcMMonad.raiseError(UnknownCat(cid)) // TODO
+    def select(cat : CId, scope : Scope, dp : Option[Int]) = 
+      TypeCheck.typeGenerators(scope, cat).map(_.map(x => (x._2, x._3).pure[TcM.T[FId]#T])).flatMap(l => l.msuml[TcM.T[FId]#T, (Expr, TType)])
   }  
 }
 
@@ -180,6 +181,15 @@ object TcM {
     }
   }
 
+  def lookupCatFns[S : Selector](cat : CId) = new TcM[S, List[(Double, CId)]] {
+    override def apply[R](abstr : Abstr, k : List[(Double, CId)] => (IntMap[MetaValue[S]], S) => R => R, h : (TcError, S) => R => R) = {
+      (ms : IntMap[MetaValue[S]], s : S) => abstr.cats.get(cat) match {
+        case Some((_,fns,_)) => k(fns)(ms, s)
+        case None => h(UnknownCat(cat), s)
+      }
+    }
+  }
+
   def lookupFunType[S : Selector](fun : CId) = new TcM[S, Type] {
     override def apply[R](abstr : Abstr, k : Type => (IntMap[MetaValue[S]], S) => R => R, h : (TcError, S) => R => R) = {
       (ms : IntMap[MetaValue[S]], s : S) => abstr.funs.get(fun) match {
@@ -225,14 +235,111 @@ object TypeCheck {
     case Some(MUnbound(_,_,_,_)) => None
     case None => None
   }
-  def infExpr[S : Selector](scope : Scope, e : Expr) : TcM[S, (Expr, TType)] = e match {
-    // TODO
-    case _ => TcM.TcMMonad[S].raiseError(CannotInferType(scope.vars, e))
+  def tcType[S : Selector](scope : Scope, ty : Type) : TcM[S, Type] = {
+    val Type(hyps, cat, es) = ty
+    for {
+      (scope, hyps) <- tcHypos(scope, hyps)
+      c_hyps <- TcM.lookupCatHyps(cat)
+      val m = es.length
+      val n = (for (Hypo(Explicit,x,ty) <- c_hyps) yield ty).length
+      (delta, es) <- tcCatArgs(scope, es, Nil, c_hyps, ty, n, m)
+    } yield Type(hyps, cat, es)
   }
-  def tcExpr[S : Selector](scope : Scope, e : Expr, tty : TType) : TcM[S, Expr] = e match {
-    // TODO
-    case EMeta(_) => for (i <- TcM.newMeta(scope, tty)) yield EMeta(i)
-    case e0 => for {
+  def tcHypos[S : Selector](scope : Scope, hs : List[Hypo]) : TcM[S, (Scope, List[Hypo])] = hs match {
+    case Nil => (scope, List[Hypo]()).pure[TcM.T[S]#T]
+    case h::hs => for {
+      (scope, h) <- tcHypo(scope, h)
+      (scope, hs) <- tcHypos(scope, hs)
+    } yield (scope, h::hs)
+  }
+  def tcHypo[S : Selector](scope : Scope, h : Hypo) : TcM[S, (Scope, Hypo)] = h match {
+    case Hypo(b, x, ty) => tcType(scope, ty).map { ty =>
+      if (x == wildCId) (scope, Hypo(b, x, ty))
+      else (scope.addScopedVar(x, TType(scope.env, ty)), Hypo(b, x, ty))
+    }
+  }
+  def tcCatArgs[S : Selector](scope : Scope, es : List[Expr], delta : Env, hs : List[Hypo], ty0 : Type, n : Int, m : Int) : TcM[S, (Env, List[Expr])] = (es, hs) match {
+    case (Nil, Nil) => (delta, List[Expr]()).pure[TcM.T[S]#T]
+    case (EImplArg(e)::es, Hypo(Explicit, x, ty)::hs) => TcM.TcMMonad.raiseError(UnexpectedImplArg(scope.vars, e))
+    case (EImplArg(e)::es, Hypo(Implicit, x, ty)::hs) => for {
+      e <- tcExpr(scope, e, TType(delta, ty))
+      (delta, es) <- if (x == wildCId) tcCatArgs(scope, es, delta, hs, ty0, n, m) 
+        else eval(scope.env, e).flatMap { v => tcCatArgs(scope, es, v::delta, hs, ty0, n, m) } 
+    } yield (delta, EImplArg(e)::es)
+    case (es, Hypo(Implicit, x, ty)::hs) => for {
+      i <- TcM.newMeta(scope, TType(delta, ty))
+      (delta, es) <- if (x == wildCId) tcCatArgs(scope, es, delta, hs, ty0, n, m)
+        else tcCatArgs(scope, es, VMeta(i, scope.env, Nil)::delta, hs, ty0, n, m)
+    } yield (delta, EImplArg(EMeta(i)):: es)
+    case (e::es, Hypo(Explicit, x, ty)::hs) => for {
+      e <- tcExpr(scope, e, TType(delta, ty))
+      (delta, es) <- if (x == wildCId) tcCatArgs(scope, es, delta, hs, ty0, n, m) 
+        else eval(scope.env, e).flatMap { v => tcCatArgs(scope, es, v::delta, hs, ty0, n, m) } 
+    } yield (delta, e::es)
+    case (_, _) => TcM.TcMMonad.raiseError(WrongCatArgs(scope.vars, ty0, ty0.start, n, m))
+  }
+  def tcArg[S : Selector](scope : Scope, e1 : Expr, e2 : Expr, delta : Env, ty0 : Type) : TcM[S, (Expr, Env, Type)] = (e2, ty0) match {
+    case (e2, Type(Nil, c, es)) => evalType(scope.size, TType(delta, ty0)).flatMap(ty1 => TcM.TcMMonad.raiseError(NotFunType(scope.vars, e1, ty1)))
+    case (EImplArg(e2), Type(Hypo(Explicit, x, ty)::hs, c, es)) => TcM.TcMMonad.raiseError(UnexpectedImplArg(scope.vars, e2))
+    case (EImplArg(e2), Type(Hypo(Implicit, x, ty)::hs, c, es)) =>
+      tcExpr(scope, e2, TType(delta, ty)).flatMap { e2 =>
+        if (x == wildCId) (EApp(e1, EImplArg(e2)):Expr, delta, Type(hs, c, es)).pure[TcM.T[S]#T]
+        else eval(scope.env, e2).map(v2 => (EApp(e1, EImplArg(e2)), v2::delta, Type(hs, c, es)))
+      }
+    case (e2, Type(Hypo(Explicit, x, ty)::hs, c, es)) =>
+      tcExpr(scope, e2, TType(delta, ty)).flatMap { e2 =>
+        if (x == wildCId) (EApp(e1, e2):Expr, delta, Type(hs, c, es)).pure[TcM.T[S]#T]
+        else eval(scope.env, e2).map(v2 => (EApp(e1, e2), v2::delta, Type(hs, c, es)))
+      }
+    case (e2, Type(Hypo(Implicit, x, ty)::hs, c, es)) =>
+      TcM.newMeta(scope, TType(delta, ty)).flatMap { i =>
+        if (x == wildCId) tcArg(scope, EApp(e1, EImplArg(EMeta(i))), e2, delta, Type(hs, c, es))
+        else tcArg(scope, EApp(e1, EImplArg(EMeta(i))), e2, VMeta(i, scope.env, Nil)::delta, Type(hs, c, es))
+      }
+  }
+  def infExpr[S : Selector](scope : Scope, e0 : Expr) : TcM[S, (Expr, TType)] = e0 match {
+    case EApp(e1, e2) => for {
+      (e1, TType(delta, ty)) <- infExpr(scope, e1)
+      (e0, delta, ty) <- tcArg(scope, e1, e2, delta, ty)
+    } yield (e0, TType(delta, ty))
+    case EFun(x) => scope.lookupVar(x) match {
+      case Some((i, tty)) => (EVar(i):Expr, tty).pure[TcM.T[S]#T]
+      case None => for { ty <- TcM.lookupFunType(x) } yield (e0, TType(Nil, ty))
+    }
+    case EVar(i) => (e0, scope.getVar(i)._2).pure[TcM.T[S]#T]
+    case ELit(l) =>
+      val cat = l match {
+        case LStr(_) => CId("String")
+        case LInt(_) => CId("Int")
+        case LFlt(_) => CId("Float")
+      }
+      (e0, TType(Nil, Type(Nil, cat, Nil))).pure[TcM.T[S]#T]
+    case ETyped(e, ty) => for {
+      ty <- tcType(scope, ty)
+      e <- tcExpr(scope, e, TType(scope.env, ty))
+    } yield (ETyped(e, ty), TType(scope.env, ty))
+    case EImplArg(e) => for {
+      (e, tty) <- infExpr(scope, e)
+    } yield (EImplArg(e), tty)  
+    case _ => TcM.TcMMonad[S].raiseError(CannotInferType(scope.vars, e0))
+  }
+  def tcExpr[S : Selector](scope : Scope, e0 : Expr, tty : TType) : TcM[S, Expr] = (e0, tty) match {
+    case (EAbs(Implicit, x, e), TType(delta, Type(Hypo(Implicit, y, ty)::hs, c, es))) =>
+      (if (y == wildCId) tcExpr(scope.addScopedVar(x, TType(delta, ty)), e, TType(delta, Type(hs, c, es)))
+       else tcExpr(scope.addScopedVar(x, TType(delta, ty)), e, TType(VGen(scope.size, Nil)::delta, Type(hs, c, es))))
+       .map(EAbs(Implicit, x, _))
+    case (EAbs(Implicit, x, e), tty) => evalType(scope.size, tty).flatMap(ty => TcM.TcMMonad.raiseError(NotFunType(scope.vars, e0, ty)))
+    case (e0, TType(delta, Type(Hypo(Implicit, y, ty)::hs, c, es))) =>
+      (if (y == wildCId) tcExpr(scope.addScopedVar(wildCId, TType(delta, ty)), e0, TType(delta, Type(hs, c, es)))
+       else tcExpr(scope.addScopedVar(wildCId, TType(delta, ty)), e0, TType(VGen(scope.size, Nil)::delta, Type(hs, c, es))))
+       .map(EAbs(Implicit, wildCId, _))
+    case (EAbs(Explicit, x, e), TType(delta, Type(Hypo(Explicit, y, ty)::hs, c, es))) =>
+      (if (y == wildCId) tcExpr(scope.addScopedVar(x, TType(delta, ty)), e, TType(delta, Type(hs, c, es)))
+       else tcExpr(scope.addScopedVar(x, TType(delta, ty)), e, TType(VGen(scope.size, Nil)::delta, Type(hs, c, es))))
+       .map(EAbs(Explicit, x, _))
+    case (EAbs(Explicit, x, e), tty) => evalType(scope.size, tty).flatMap(ty => TcM.TcMMonad.raiseError(NotFunType(scope.vars, e0, ty)))
+    case (EMeta(_), tty) => for (i <- TcM.newMeta(scope, tty)) yield EMeta(i)
+    case (e0, tty) => for {
       (e0, tty0) <- infExpr[S](scope, e0)
       (e0, tty0) <- appImplArg(scope, e0, tty0)
       i <- TcM.newGuardedMeta(e0)
@@ -257,21 +364,25 @@ object TypeCheck {
     }
     if (cat1 == cat2) for {
       (k, delta1, delta2) <- eqHyps(k, delta1, hyps1, delta2, hyps2)
-      v <- (es1 zip es2).map {case (e1, e2) => eqExpr(raiseTypeMatchError, 
+      v <- (es1 zip es2).map {case (e1, e2) => eqExpr(new { def apply[A]() = raiseTypeMatchError[A] }, 
           TcM.addConstraint(i0, _, _ : Expr => TcM[S, Unit]), k, delta1, e1, delta2, e2)}.sequence_[TcM.T[S]#T, Unit]
     } yield v 
     else raiseTypeMatchError
   }
   def appImplArg[S : Selector](scope : Scope, e : Expr, tty : TType) : TcM[S, (Expr, TType)] = tty match {
-    // TODO
+    case TType(delta, Type(Hypo(Implicit, x, ty1)::hypos, cat, es)) => 
+      TcM.newMeta(scope, TType(delta, ty1)).flatMap { i =>
+        val delta1 = if (x == wildCId) delta else VMeta(i, scope.env, Nil) :: delta
+        appImplArg(scope, EApp(e, EImplArg(EMeta(i))), TType(delta1, Type(hypos, cat, es)))
+      }
     case _ => (e, tty).pure[TcM.T[S]#T]
   }
-  def eqExpr[S : Selector](fail : TcM[S, Unit], suspend : (MetaId, Expr => TcM[S, Unit]) => TcM[S, Unit], k : Int, env1 : Env, e1 : Expr, env2 : Env, e2 : Expr) : TcM[S, Unit] = for {
+  def eqExpr[S : Selector](fail : { def apply[A]() : TcM[S, A] }, suspend : (MetaId, Expr => TcM[S, Unit]) => TcM[S, Unit], k : Int, env1 : Env, e1 : Expr, env2 : Env, e2 : Expr) : TcM[S, Unit] = for {
     v1 <- eval(env1, e1)
     v2 <- eval(env2, e2)
     v <- eqValue(fail, suspend, k, v1, v2)
   } yield v
-  def eqValue[S : Selector](fail : TcM[S, Unit], suspend : (MetaId, Expr => TcM[S, Unit]) => TcM[S, Unit], k : Int, v1 : Value, v2 : Value) : TcM[S, Unit] = {
+  def eqValue[S : Selector](fail : { def apply[A]() : TcM[S, A] }, suspend : (MetaId, Expr => TcM[S, Unit]) => TcM[S, Unit], k : Int, v1 : Value, v2 : Value) : TcM[S, Unit] = {
     def deRef(v : Value) : TcM[S, Value] = v match {
       case VMeta(i, env, vs) => TcM.getMeta(i).flatMap {
         case MBound(e) => apply(env, e, vs)
@@ -283,7 +394,7 @@ object TypeCheck {
     def bind(i : Int, scope : Scope, cs : List[Expr => TcM[S, Unit]], env : Env, vs0 : List[Value], v : Value) : TcM[S, Unit] = {
       val k = scope.size
       val vs = env.take(k).reverse ++ vs0
-      val xs = (for (VGen(i, Nil) <- vs) yield i).toSet.toList
+      val xs = (for (VGen(i, Nil) <- vs) yield i).toList.distinct
       def addLam(vs : List[Value], e : Expr) : Expr = vs match {
         case Nil => e
         case v :: vs => EAbs(Explicit, CId("v"), addLam(vs, e))
@@ -298,11 +409,26 @@ object TypeCheck {
       } yield r
     }
     def occurCheck(i0 : Int, k : Int, xs : List[Int], v : Value) : TcM[S, Value] = v match {
-      // TODO
+      case VApp(f, vs) => vs.traverse[TcM.T[S]#T, Value](occurCheck(i0, k, xs, _)).map(VApp(f, _))
       case VLit(l) => v.pure[TcM.T[S]#T]
+      case VMeta(i, env, vs) => if (i == i0) fail(); TcM.getMeta(i).flatMap {
+        case MBound(e) => apply(env, e, vs).flatMap(occurCheck(i0, k, xs, _))
+        case MGuarded(e, _, _) => apply(env, e, vs).flatMap(occurCheck(i0, k, xs, _))
+        case MUnbound(_, scopei, _, _) =>
+          if (scopei.size > k) fail()
+          else vs.traverse[TcM.T[S]#T, Value](occurCheck(i0, k, xs, _)).map(VMeta(i, env, _))
+      }
+      case VSusp(i, env, vs, cnt) => 
+        suspend(i, e => apply(env, e, vs).flatMap(v => occurCheck(i0, k, xs, cnt(v)) >> ().pure[TcM.T[S]#T])) >> v.pure[TcM.T[S]#T]
+      case VGen(i, vs) => xs.find { x => x == i } match {
+        case Some(i) => vs.traverse[TcM.T[S]#T, Value](occurCheck(i0, k, xs, _)).map(VGen(i, _))
+        case None => fail()
+      }
+      case VConst(f, vs) => vs.traverse[TcM.T[S]#T, Value](occurCheck(i0, k, xs, _)).map(VConst(f, _))
+      case VClosure(env, e) => env.traverse[TcM.T[S]#T, Value](occurCheck(i0, k, xs, _)).map(VClosure(_, e))
+      case VImplArg(e) => occurCheck(i0, k, xs, e).map(VImplArg(_))
     }
     def eqValue1(k : Int, v1 : Value, v2 : Value) : TcM[S, Unit] = (v1, v2) match {
-      // TODO
       case (VSusp(i, env, vs1, c), v2) => suspend(i, e => apply(env, e, vs1).flatMap(v1 => eqValue(fail, suspend, k, c(v1), v2))) 
       case (v1, VSusp(i, env, vs2, c)) => suspend(i, e => apply(env, e, vs2).flatMap(v2 => eqValue(fail, suspend, k, v1, c(v2)))) 
       case (VMeta(f1, env1, vs1), VMeta(f2, env2, vs2)) if f1 == f2 => (vs1 zip vs2).traverse_[TcM.T[S]#T] { case(v1, v2) => eqValue(fail, suspend, k, v1, v2) }
@@ -335,7 +461,7 @@ object TypeCheck {
           v2 <- eval(v::env2, e2)
           v <- eqValue(fail, suspend, k+1, v1, v2) 
         } yield v
-      case (_, _) => fail
+      case (_, _) => fail()
     }
     for {
       v1a <- deRef(v1)
@@ -373,5 +499,17 @@ object TypeCheck {
   def value2expr[S : Selector](i : Int, v : Value) = new TcM[S, Expr] {
     override def apply[R](abstr : Abstr, k : Expr => (IntMap[MetaValue[S]], S) => R => R, h : (TcError, S) => R => R) =
       (ms : IntMap[MetaValue[S]], s : S) => k(v.toExpr(Sig(abstr.funs, lookupMeta(ms)), i))(ms, s)
+  }
+  def typeGenerators[S : Selector](scope : Scope, cat : CId) : TcM[S, List[(Double, Expr, TType)]] = {
+    val xv = for (((_,tty@TType(_, Type(_, cat1, _))), i) <- scope.gamma.zipWithIndex; if cat == cat1) yield (0.25, EVar(i), tty) 
+    val y = if (cat == cidInt) List((1.0, ELit (LInt(999)), TType(Nil, Type(Nil, cat, Nil)))).pure[TcM.T[S]#T]
+      else if (cat == cidFloat) List((1.0, ELit (LFlt(3.14)), TType(Nil, Type(Nil, cat, Nil)))).pure[TcM.T[S]#T]
+      else if (cat == cidString) List((1.0, ELit (LStr("Foo")), TType(Nil, Type(Nil, cat, Nil)))).pure[TcM.T[S]#T]
+      else TcM.lookupCatFns(cat).flatMap(_.traverse[TcM.T[S]#T, (Double, Expr, TType)] {case (p, fn) => TcM.lookupFunType(fn).map{ty => (p, EFun(fn), TType(Nil, ty))}})
+    def normalize(gens : List[(Double, Expr, TType)]) = {
+        val s = gens.map(_._1).sum
+        for ((p,e,tty) <- gens) yield (p/s,e,tty)
+      }
+    for {yv <- y} yield normalize(xv++yv)
   }
 }
