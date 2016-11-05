@@ -1,10 +1,12 @@
+scalaVersion in ThisBuild := "2.11.8"
 
 val gf = crossProject.in(file("."))
     .settings(
         name := "Scala GF",
         normalizedName := "scala-gf",
         libraryDependencies ++= Seq(
-            "com.lihaoyi" %%% "fastparse-byte" % "0.4.1"
+            "com.lihaoyi" %%% "fastparse-byte" % "0.4.1",
+            "org.scalaz" %%% "scalaz-core" % "7.2.7"
         ),
         scalaJSStage in Global := FullOptStage,
         organization := "org.tilk",

@@ -33,7 +33,7 @@ final case class PApply(id : FunId, args : List[PArg]) extends Production
 final case class PCoerce(id : FId) extends Production
 final case class PConst(id : CId, expr : Expr, tokens : List[Token]) extends Production
 
-final case class PArg(a : List[(FId, FId)], val fid : FId)
+final case class PArg(val hypos : List[(FId, FId)], val fid : FId)
 
 abstract sealed class Symbol {
   val toToken : Option[Token] = None

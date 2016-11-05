@@ -9,6 +9,7 @@ package object gf {
   type MetaId = Int
   type LIndex = Int
   type DotPos = Int
+  type Env = List[Value]
   val fidString : FId = -1
   val fidInt : FId = -2
   val fidFloat : FId = -3
