@@ -10,6 +10,7 @@ package object gf {
   type LIndex = Int
   type DotPos = Int
   type Env = List[Value]
+  type CncType = (CId, FId)
   val fidString : FId = -1
   val fidInt : FId = -2
   val fidFloat : FId = -3

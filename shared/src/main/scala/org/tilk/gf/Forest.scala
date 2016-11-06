@@ -74,7 +74,52 @@ final case class Forest(abstr : Abstr, concr : Concr, forest : IntMap[Set[Produc
   }
   def linearizeWithBrackets(dp : Option[Int]) : BracketedString = 
     BracketedToken.untoken(None, List(bracketedToken(dp)))._2.head
-  def bracketedToken(dp : Option[Int]) : BracketedToken = BTLeafNE // TODO
+  def bracketedToken(dp : Option[Int]) : BracketedToken = {
+    def trustedSpots(parents : Set[FId], parg : PArg) : Set[FId] = {
+      val parents1 = parents + parg.fid
+      def descend(p : Production) : Set[FId] = p match {
+        case PApply(funid, args) => args.map(trustedSpots(parents1, _)).fold(Set.empty[FId])(_ union _)
+        case PConst(c, e, _) => Set.empty
+      }
+      if (parg.fid < concr.totalCats || parents(parg.fid)) Set.empty
+      else forest.get(parg.fid) match {
+        case Some(prods) => prods.toList.map(descend).reduce(_ intersect _) + parg.fid
+        case None => Set(parg.fid)
+      }
+    }
+    val trusted = (for ((_, args) <- root) yield args.map(trustedSpots(Set.empty, _)).fold(Set.empty)(_ union _)).reduce(_ intersect _)
+    def isTrusted(p : CncType) = trusted(p._2)
+    def getVar(p : (FId, FId)) = 
+      if (p._1 == fidVar) wildCId 
+      else (for (PConst(_, EFun(x), _) <- forest.get(p._1).map(_.toList).getOrElse(Nil)) yield x).head
+    def render(forest : IntMap[Set[Production]], arg : PArg) : (CncType, Int, CId, List[Expr], LinTable) = {
+      val PArg(hypos, fid) = arg
+      def descend(forest : IntMap[Set[Production]], p : Production) = p match {
+        case PApply(funid, args) =>
+          val CncFun(fun, _lins) = concr.cncfuns(funid)
+          val cat = fun.isLindef match {
+            case Some(cat) => cat
+            case None => abstr.funs(fun)._1.start
+          }
+          val largs = args.map(render(forest, _))
+          val ltable = LinTable(concr, isTrusted, Nil, funid, largs)
+          ((cat, fid), 0, wildCId, getAbsTrees(arg, None, dp).fold(_ => Nil, x => x), ltable)
+        case PCoerce(fid) => render(forest, PArg(Nil, fid))
+        case PConst(cat, e, ts) => ((cat, fid), 0, wildCId, List(e), LinTable(Nil, Vector(ts.map(BTLeafKS))))
+      }
+      forest.get(fid).map{s => val m = s.head; (m, s-m) } match {
+        case Some((p, set)) => 
+          val (ct, fid1, fun, es, LinTable(_, lin)) = descend(if (set.isEmpty) forest else forest+((fid, set)), p)
+          (ct, fid1, fun, es, LinTable(hypos.map(getVar), lin))
+        case None => throw new Exception("wrong forest id")
+      }
+    }
+    (for ((seq, args) <- root) yield LinTable.computeSeq(isTrusted, seq, args.map(render(forest, _)))).headOption match {
+      case Some(List(bs@BTBracket(_,_,_,_,_,_))) => bs
+      case Some(bss) => BTBracket(wildCId, 0, 0, wildCId, Nil, bss)
+      case None => BTBracket(wildCId, 0, 0, wildCId, Nil, Nil)
+    }
+  }
   def fold[B](b : B, fcat : FId)(f : (FunId, List[PArg], B) => B)(g : (Expr, List[String], B) => B) : B = {
     def foldProd(p : Production, b : B) = p match {
       case PCoerce(fcat) => fold(b, fcat)(f)(g)
