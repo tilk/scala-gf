@@ -1,6 +1,10 @@
 package org.tilk.gf
 
 import scala.collection.immutable.IntMap
+import scodec.bits.ByteVector
+import fastparse.byte.all.Parsed
+import scalaz._
+import Scalaz._
 
 final case class Abstr(
     val aflags : Map[CId, Literal],
@@ -52,15 +56,19 @@ final case object SymCapit extends Symbol { override val toToken : Option[Token]
 final case object SymAllCapit extends Symbol { override val toToken : Option[Token] = Some("&|") }
 
 case class PGF(
-    val gflags : Map[String, Literal], 
+    val gflags : Map[CId, Literal], 
     val absname : CId, 
     val abstr : Abstr, 
     val concr : Map[CId, Concr]
 ) {
-
+  def startCat = List(gflags, abstr.aflags).map(_.get(CId("startcat"))).msuml match {
+    case Some(LStr(s)) => CId(s)
+    case _ => CId("S")
+  }
+  def startType = Type(Nil, startCat, Nil)
   def getConcrComplete(id : CId) : Option[Concr] = 
     concr.get(id).orElse(concr.get(CId(absname.value + id.value)))
-  def parse(lang : CId, typ : Type, dp : Option[Int] = Some(4), s : String) : (ParseOutput, BracketedString) = 
+  def parse(lang : CId, s : String, typ : Type = startType, dp : Option[Int] = Some(4)) : (ParseOutput, BracketedString) = 
     ParseState.parse(this, lang, typ, dp, s.split(' ').toList)
   def linearize(lang : CId, e : Expr) = bracketedLinearize(lang, e).flatMap(_.flatten).mkString(" ")
   def bracketedLinearize(lang : CId, e : Expr) = {
@@ -69,3 +77,15 @@ case class PGF(
   } 
 }
 
+object PGF {
+  def apply(data : Array[Byte]) : PGF = apply(ByteVector(data))
+  def apply(data : ByteVector) : PGF = parse(data) match {
+    case Right(v) => v
+    case Left(msg) => throw new Exception(msg)
+  }
+  def parse(data : Array[Byte]) : Either[String, PGF] = parse(ByteVector(data))
+  def parse(data : ByteVector) : Either[String, PGF] = Parser.parsePGF.parse(data) match {
+    case Parsed.Success(v, si) => Right(v)
+    case p : Parsed.Failure => Left(p.extra.traced.trace)
+  }
+}

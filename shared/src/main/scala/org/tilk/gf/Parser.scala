@@ -6,19 +6,24 @@ import scala.collection.immutable.IntMap
 
 object Parser {
   implicit val utf8 = Charset.forName("UTF-8")
-  val parseInt : Parser[Int] = BE.Int64.map(_.intValue)
+  val parseInt : Parser[Int] = for {
+    b <- AnyByte!
+    val bv = b.head.toInt & 0xff
+    r <- if ((bv & 0x80) != 0) parseInt
+         else Pass.map(_ => 0)
+  } yield (bv&0x7f)|(r << 7)
   val parseUTF8Char : Parser[Bytes] = for {
     b <- AnyByte!
-    val bv = b.head.toInt
+    val bv = b.head.toInt & 0xff
     r <- if (bv < 0x80) Pass.map(_ => Bytes.empty) 
          else if (bv < 0xe0) AnyByte!
          else if (bv < 0xf0) AnyBytes(2)!
          else AnyBytes(3)!
   } yield b++r
-  def parseSeq[A](ap : Parser[A]) : Parser[Seq[A]] = for {
+  def parseSeq[A](ap : Parser[A]) : Parser[Seq[A]] = (for {
     n <- parseInt
     l <- ap.rep(exactly=n)
-  } yield l
+  } yield l)
   def parseList[A](ap : Parser[A]) : Parser[List[A]] = parseSeq(ap).map(_.toList)
   def parseArray[A](ap : Parser[A]) : Parser[Vector[A]] = parseSeq(ap).map(_.toVector)
   def parseSet[A](ap : Parser[A]) : Parser[Set[A]] = parseSeq(ap).map(_.toSet)
@@ -109,7 +114,7 @@ object Parser {
   val pgfMajorVersion = 2
   val pgfMinorVersion = 1
   val parsePGF21 : Parser[PGF] = for {
-    gflags <- parseMap(parseString, parseLiteral)
+    gflags <- parseMap(parseCId, parseLiteral)
     absname <- parseCId
     abstr <- parseAbstr
     concr <- parseMap(parseCId, parseConcr)
