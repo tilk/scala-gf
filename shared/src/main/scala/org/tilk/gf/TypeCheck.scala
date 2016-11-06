@@ -472,7 +472,7 @@ object TypeCheck {
   def evalType[S : Selector](k : Int, tty : TType) : TcM[S, Type] = {
     val TType(delta, ty) = tty
     def evalTy(k : Int, delta : Env, tp : Type) : TcM[S, Type] = for {
-      (k, delta, hyps) <- evalHypos(k, delta, tp.hypo)
+      (k, delta, hyps) <- evalHypos(k, delta, tp.hyps)
       es <- tp.exprs.traverse[TcM.T[S]#T, Expr](e => for (v <- eval(delta, e); e2 <- value2expr(k, v)) yield e2)
     } yield Type(hyps, ty.start, es)
     def evalHypos(k : Int, delta : Env, hypos : List[Hypo]) : TcM[S, (Int, Env, List[Hypo])] = hypos match {

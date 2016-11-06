@@ -55,22 +55,29 @@ object BracketedToken {
   }
 }
 
-final case class LinTable(cids : List[CId], toks : Vector[List[BracketedToken]])
+final case class LinTable(val cids : List[CId], val toks : Vector[List[BracketedToken]])
+
+final case class Linearization(val ct : CncType, val fid : FId, val fun : CId, val es : List[Expr], val table : LinTable) {
+  def firstLin(cnc : Concr) = cnc.linrefs.get(fid) match {
+    case Some(funid::_) => LinTable(cnc, _ => true, Nil, funid, List(this)).toks(0)
+    case _ => List(BTLeafKS(""))
+  }
+}
 
 object LinTable {
-  def apply(cnc : Concr, filter : CncType => Boolean, xs : List[CId], funid : FunId, args : List[(CncType, FId, CId, List[Expr], LinTable)]) : LinTable = {
+  def apply(cnc : Concr, filter : CncType => Boolean, xs : List[CId], funid : FunId, args : List[Linearization]) : LinTable = {
     val CncFun(_, lins) = cnc.cncfuns(funid) 
     LinTable(xs, lins.map(seqid => computeSeq(filter, cnc.sequences(seqid).toList, args)))
   }
-  def computeSeq(filter : CncType => Boolean, seq : List[Symbol], args : List[(CncType, FId, CId, List[Expr], LinTable)]) : List[BracketedToken] = {
+  def computeSeq(filter : CncType => Boolean, seq : List[Symbol], args : List[Linearization]) : List[BracketedToken] = {
     def getArg(d : Int, r : LIndex) = {
-      val (ct@(cat, fid), _, fun, es, LinTable(_xs, lin)) = args(d)
+      val Linearization(ct@(cat, fid), _, fun, es, LinTable(_xs, lin)) = args(d)
       val arg_lin = lin(r)
       if (!arg_lin.isEmpty && filter(ct)) List(BTBracket(cat, fid, r, fun, es, arg_lin))
       else arg_lin
     }
     def getVar(d : Int, r : LIndex) = {
-      val (_ct, _, fun, es, LinTable(xs, _lin)) = args(d)
+      val Linearization(_ct, _, fun, es, LinTable(xs, _lin)) = args(d)
       List(BTLeafKS(xs(r).value))
     }
     def compute(s : Symbol) : List[BracketedToken] = s match {

@@ -92,7 +92,7 @@ final case class Forest(abstr : Abstr, concr : Concr, forest : IntMap[Set[Produc
     def getVar(p : (FId, FId)) = 
       if (p._1 == fidVar) wildCId 
       else (for (PConst(_, EFun(x), _) <- forest.get(p._1).map(_.toList).getOrElse(Nil)) yield x).head
-    def render(forest : IntMap[Set[Production]], arg : PArg) : (CncType, Int, CId, List[Expr], LinTable) = {
+    def render(forest : IntMap[Set[Production]], arg : PArg) : Linearization = {
       val PArg(hypos, fid) = arg
       def descend(forest : IntMap[Set[Production]], p : Production) = p match {
         case PApply(funid, args) =>
@@ -109,8 +109,8 @@ final case class Forest(abstr : Abstr, concr : Concr, forest : IntMap[Set[Produc
       }
       forest.get(fid).map{s => val m = s.head; (m, s-m) } match {
         case Some((p, set)) => 
-          val (ct, fid1, fun, es, LinTable(_, lin)) = descend(if (set.isEmpty) forest else forest+((fid, set)), p)
-          (ct, fid1, fun, es, LinTable(hypos.map(getVar), lin))
+          val Linearization(ct, fid1, fun, es, LinTable(_, lin)) = descend(if (set.isEmpty) forest else forest+((fid, set)), p)
+          Linearization(ct, fid1, fun, es, LinTable(hypos.map(getVar), lin))
         case None => throw new Exception("wrong forest id")
       }
     }

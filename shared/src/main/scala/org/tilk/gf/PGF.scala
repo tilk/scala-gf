@@ -57,11 +57,15 @@ case class PGF(
     val abstr : Abstr, 
     val concr : Map[CId, Concr]
 ) {
+
   def getConcrComplete(id : CId) : Option[Concr] = 
     concr.get(id).orElse(concr.get(CId(absname.value + id.value)))
-  def parse(pgf : PGF, lang : CId, typ : Type, dp : Option[Int] = Some(4), s : String) : (ParseOutput, BracketedString) = concr.get(lang) match {
-    case Some(cnc) => ParseState.parse(pgf, lang, typ, dp, s.split(' ').toList)
-    case None => throw new Exception("Unknown language: " ++ lang.value)
-  }
+  def parse(lang : CId, typ : Type, dp : Option[Int] = Some(4), s : String) : (ParseOutput, BracketedString) = 
+    ParseState.parse(this, lang, typ, dp, s.split(' ').toList)
+  def linearize(lang : CId, e : Expr) = bracketedLinearize(lang, e).flatMap(_.flatten).mkString(" ")
+  def bracketedLinearize(lang : CId, e : Expr) = {
+    val cnc = concr(lang)
+    new Linearize(this, cnc).linTree(e).map(l => BracketedToken.untoken(None, l.firstLin(cnc))._2).head
+  } 
 }
 

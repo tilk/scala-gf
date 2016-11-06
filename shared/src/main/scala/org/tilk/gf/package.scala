@@ -20,4 +20,5 @@ package object gf {
   val cidFloat  = CId("Float")
   val cidVar    = CId("__gfVar")
   val wildCId   = CId("_")
+  def isPredefFId(fid : FId) = List(fidString, fidInt, fidFloat, fidVar).contains(fid)
 }
