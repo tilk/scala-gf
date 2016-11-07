@@ -27,10 +27,16 @@ final case class Concr(
     val totalCats: FId
 ) {
   def rhs(fid : FId, lbl : LIndex) = cncfuns(fid).lins(lbl)
+  def update(abstr : Abstr) = {
+    val p_prods0 = Optimize.filterProductions(IntMap.empty, Set.empty, productions)
+    val (lex, p_prods) = Optimize.splitLexicalRules(this, p_prods0)
+    val l_prods = Optimize.linIndex(this, productions)
+    this.copy(pproductions = p_prods, lproductions = l_prods, lexicon = lex)
+  }
 }
 
 final case class CncCat(a : FId, b : FId, c : Vector[String])
-final case class CncFun(a : CId, lins : Vector[SeqId]) 
+final case class CncFun(val fun : CId, val lins : Vector[SeqId]) 
 
 abstract sealed class Production
 final case class PApply(id : FunId, args : List[PArg]) extends Production
@@ -75,6 +81,8 @@ case class PGF(
     val cnc = concr(lang)
     new Linearize(this, cnc).linTree(e).map(l => BracketedToken.untoken(None, l.firstLin(cnc))._2).head
   } 
+  
+  def updateProductionIndices : PGF = this.copy(concr = concr.mapValues(_.update(abstr)))
 }
 
 object PGF {

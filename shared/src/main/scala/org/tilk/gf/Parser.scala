@@ -118,7 +118,7 @@ object Parser {
     absname <- parseCId
     abstr <- parseAbstr
     concr <- parseMap(parseCId, parseConcr)
-  } yield PGF(gflags, absname, abstr, concr)
+  } yield PGF(gflags, absname, abstr, concr).updateProductionIndices
   val parsePGF : Parser[PGF] = for {
     major <- BE.Int16
     minor <- BE.Int16
