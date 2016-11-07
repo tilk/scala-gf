@@ -103,9 +103,9 @@ final case class Forest(abstr : Abstr, concr : Concr, forest : IntMap[Set[Produc
           }
           val largs = args.map(render(forest, _))
           val ltable = LinTable(concr, isTrusted, Nil, funid, largs)
-          ((cat, fid), 0, wildCId, getAbsTrees(arg, None, dp).fold(_ => Nil, x => x), ltable)
+          Linearization((cat, fid), 0, wildCId, getAbsTrees(arg, None, dp).fold(_ => Nil, x => x), ltable)
         case PCoerce(fid) => render(forest, PArg(Nil, fid))
-        case PConst(cat, e, ts) => ((cat, fid), 0, wildCId, List(e), LinTable(Nil, Vector(ts.map(BTLeafKS))))
+        case PConst(cat, e, ts) => Linearization((cat, fid), 0, wildCId, List(e), LinTable(Nil, Vector(ts.map(BTLeafKS))))
       }
       forest.get(fid).map{s => val m = s.head; (m, s-m) } match {
         case Some((p, set)) => 
