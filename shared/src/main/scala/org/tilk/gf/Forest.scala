@@ -70,7 +70,9 @@ final case class Forest(abstr : Abstr, concr : Concr, forest : IntMap[Set[Produc
             }).map(mkAbs).plus(trees)};
           _ <- TcM.put(fid0)) yield x
     }
-    Left(List())
+    val (err, res) = go(Set.empty, Scope.empty, ty.map(TType(Nil, _)), arg).flatMap(e => TcM.generateForForest(e)).run(abstr, IntMap.empty, arg.fid)
+    if (res.isEmpty) Left(err.distinct)
+    else Right(res.map(_._3).distinct)
   }
   def linearizeWithBrackets(dp : Option[Int]) : BracketedString = 
     BracketedToken.untoken(None, List(bracketedToken(dp)))._2.head
