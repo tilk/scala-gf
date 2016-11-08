@@ -78,7 +78,7 @@ case class PGF(
     ParseState.parse(this, lang, typ, dp, s.split(' ').toList)
   def linearize(lang : CId, e : Expr) = bracketedLinearize(lang, e).flatMap(_.flatten).mkString(" ")
   def bracketedLinearize(lang : CId, e : Expr) = {
-    val cnc = concr(lang)
+    val cnc = getConcrComplete(lang).get
     new Linearize(this, cnc).linTree(e).map(l => BracketedToken.untoken(None, l.firstLin(cnc))._2).head
   } 
   

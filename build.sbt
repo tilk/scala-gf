@@ -6,7 +6,8 @@ val gf = crossProject.in(file("."))
         normalizedName := "scala-gf",
         libraryDependencies ++= Seq(
             "com.lihaoyi" %%% "fastparse-byte" % "0.4.1",
-            "org.scalaz" %%% "scalaz-core" % "7.2.7"
+            "org.scalaz" %%% "scalaz-core" % "7.2.7",
+            "org.scalatest" %% "scalatest" % "3.0.0" % "test"
         ),
         scalaJSStage in Global := FullOptStage,
         organization := "org.tilk",
