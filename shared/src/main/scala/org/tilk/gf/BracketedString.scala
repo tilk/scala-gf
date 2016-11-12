@@ -16,15 +16,17 @@ sealed abstract class BracketedString {
 case class BSLeaf(token : Token) extends BracketedString
 case class BSBracket(id : CId, fid : FId, idx : LIndex, cid2 : CId, exprs : List[Expr], substrings : List[BracketedString]) extends BracketedString
 
+private[gf]
 sealed abstract class BracketedToken
-case class BTBracket(cid : CId, fid : FId, idx : LIndex, cid2 : CId, exprs : List[Expr], subtokens : List[BracketedToken]) extends BracketedToken
-case class BTLeafKS(token : Token) extends BracketedToken
-case object BTLeafNE extends BracketedToken
-case object BTLeafBind extends BracketedToken
-case object BTLeafSoftBind extends BracketedToken
-case object BTLeafCapit extends BracketedToken
-case class BTLeafKP(subtokens : List[BracketedToken], l : List[(List[BracketedToken], List[String])]) extends BracketedToken
+private[gf] case class BTBracket(cid : CId, fid : FId, idx : LIndex, cid2 : CId, exprs : List[Expr], subtokens : List[BracketedToken]) extends BracketedToken
+private[gf] case class BTLeafKS(token : Token) extends BracketedToken
+private[gf] case object BTLeafNE extends BracketedToken
+private[gf] case object BTLeafBind extends BracketedToken
+private[gf] case object BTLeafSoftBind extends BracketedToken
+private[gf] case object BTLeafCapit extends BracketedToken
+private[gf] case class BTLeafKP(subtokens : List[BracketedToken], l : List[(List[BracketedToken], List[String])]) extends BracketedToken
 
+private[gf]
 object BracketedToken {
   def untoken(nw : Option[String], bss : List[BracketedToken]) : (Option[String], List[BracketedString]) = {
     def sel(d : List[BracketedToken], vs : List[(List[BracketedToken], List[String])], nw : Option[String]) = nw match {
@@ -46,6 +48,7 @@ object BracketedToken {
           case Some(bss) => (nw1, Some(bss.concatenate))
           case None => (None, None)
         }
+      case BTLeafBind | BTLeafCapit | BTLeafSoftBind => throw new Exception()
     }
     val (nw1, bss1) = bss.mapAccumRight(nw, untokn)
     bss1.sequence match {
@@ -55,8 +58,10 @@ object BracketedToken {
   }
 }
 
+private[gf]
 final case class LinTable(val cids : List[CId], val toks : Vector[List[BracketedToken]])
 
+private[gf]
 final case class Linearization(val ct : CncType, val fid : FId, val fun : CId, val es : List[Expr], val table : LinTable) {
   def firstLin(cnc : Concr) = cnc.linrefs.get(fid) match {
     case Some(funid::_) => LinTable(cnc, _ => true, Nil, funid, List(this)).toks(0)
@@ -64,6 +69,7 @@ final case class Linearization(val ct : CncType, val fid : FId, val fun : CId, v
   }
 }
 
+private[gf]
 object LinTable {
   def apply(cnc : Concr, filter : CncType => Boolean, xs : List[CId], funid : FunId, args : List[Linearization]) : LinTable = {
     val CncFun(_, lins) = cnc.cncfuns(funid) 

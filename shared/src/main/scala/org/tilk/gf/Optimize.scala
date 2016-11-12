@@ -2,6 +2,7 @@ package org.tilk.gf
 
 import scala.collection.immutable.{IntMap, SortedMap}
 
+private[gf]
 object Optimize {
   def filterProductions(prods0 : IntMap[Set[Production]], hoc0 : Set[Int], prods : IntMap[Set[Production]]) : IntMap[Set[Production]] = {
     def isLive(fid : FId) = isPredefFId(fid) || prods0.get(fid).isDefined || hoc0(fid)
@@ -51,6 +52,7 @@ object Optimize {
         case SymSoftSpace::_ => TrieMap(wf(Nil))
         case SymCapit::_ => TrieMap(wf(List("&|")))
         case SymAllCapit::_ => TrieMap(wf(List("&|")))
+        case SymCat(_, _)::_ | SymLit(_, _)::_ | SymVar(_, _)::_ => throw new Exception()
       }
       val vect = for ((seqid, lbl) <- lins.zipWithIndex) yield (lbl, seq2prefix(cnc.sequences(seqid).toList))
       IntMap(vect:_*)
@@ -73,6 +75,7 @@ object Optimize {
         case None => Nil
         case Some(prods) => for (prod <- prods.toList; fun <- getFunctions(prod)) yield fun
       }
+      case PConst(_, _, _) => throw new Exception()
     }
     val it = for ((res, prods) <- productions; prod <- prods; fun <- getFunctions(prod)) yield SortedMap((fun, IntMap((res, Set(prod)))))
     it.foldLeft(SortedMap[CId, IntMap[Set[Production]]]())((a, b) => a.unionWith(b, (c,d) => c.unionWith(d, (_,e,f) => e union f)))

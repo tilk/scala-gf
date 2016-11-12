@@ -3,18 +3,20 @@ package org.tilk.gf
 import fastparse.byte.all._
 import java.nio.charset.Charset
 import scala.collection.immutable.IntMap
+import scala.language.postfixOps
 
+private[gf]
 object Parser {
   implicit val utf8 = Charset.forName("UTF-8")
   val parseInt : Parser[Int] = for {
-    b <- AnyByte!
-    val bv = b.head.toInt & 0xff
+    b <- AnyByte!;
+    bv = b.head.toInt & 0xff
     r <- if ((bv & 0x80) != 0) parseInt
          else Pass.map(_ => 0)
   } yield (bv&0x7f)|(r << 7)
   val parseUTF8Char : Parser[Bytes] = for {
-    b <- AnyByte!
-    val bv = b.head.toInt & 0xff
+    b <- AnyByte!;
+    bv = b.head.toInt & 0xff
     r <- if (bv < 0x80) Pass.map(_ => Bytes.empty) 
          else if (bv < 0xe0) AnyByte!
          else if (bv < 0xf0) AnyBytes(2)!

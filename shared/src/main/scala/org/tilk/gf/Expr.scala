@@ -22,7 +22,7 @@ abstract sealed class Expr {
       case None => throw new Exception("Unknown function")
     }
     case EApp(e1, e2) => e1.apply(sig, env, List(e2.eval(sig, env)))
-    case EAbs(b, x, e) => VClosure(env, this)
+    case a@EAbs(b, x, e) => VClosure(env, a)
     case EMeta(i) => sig.metas(i) match {
       case Some(e) => e.eval(sig, env)
       case None => VMeta(i, env, Nil)
@@ -46,6 +46,7 @@ abstract sealed class Expr {
     case EAbs(b, x, e) => (b, vals.head) match {
       case (Implicit, VImplArg(v)) => e.apply(sig, v::env, vals.tail)
       case (Explicit, v) => e.apply(sig, v::env, vals.tail)
+      case (Implicit, _) => throw new Exception()
     }
     case EMeta(i) => sig.metas(i) match {
       case Some(e) => e.apply(sig, env, vals)
@@ -99,6 +100,7 @@ object Equation {
             
           }
           tryMatch(p, a, env)
+        case (_ :: _, Nil) => throw new Exception()
       }
       tryMatches(eqs, ps, as0, res, Nil)
   }
@@ -115,6 +117,7 @@ abstract sealed class Value {
     case VClosure(env, EAbs(b, x, e)) => (b, vs.head) match {
       case (Implicit, VImplArg(v)) => e.apply(sig, v::env, vs.tail)
       case (Explicit, v) => e.apply(sig, v::env, vs.tail)
+      case (Implicit, _) => throw new Exception()
     }
     case VImplArg(_) => throw new Exception("implicit argument in function position")
   }
@@ -139,5 +142,5 @@ case class VMeta(val m : MetaId, val env : Env, val values : List[Value]) extend
 case class VSusp(val m : MetaId, val env : Env, val values : List[Value], val f : Value => Value) extends Value
 case class VGen(val n : Int, val values : List[Value]) extends Value
 case class VConst(val id : CId, val values : List[Value]) extends Value
-case class VClosure(val env : Env, val expr : Expr) extends Value
+case class VClosure(val env : Env, val expr : EAbs) extends Value
 case class VImplArg(val value : Value) extends Value

@@ -17,8 +17,10 @@ case class UnresolvedMetaVars(cids : List[CId], e : Expr, metas : List[MetaId]) 
 case class UnexpectedImplArg(cids: List[CId], e : Expr) extends TcError
 case class UnsolvableGoal(cids : List[CId], meta : MetaId, tp : Type) extends TcError
 
+private[gf]
 final case class TType(e : Env, t : Type)
 
+private[gf]
 final case class Scope(gamma : List[(CId, TType)]) {
   def size = gamma.length
   def vars = gamma.map(_._1)
@@ -31,20 +33,24 @@ final case class Scope(gamma : List[(CId, TType)]) {
   def addScopedVar(x : CId, tty : TType) = Scope((x,tty)::gamma)
 }
 
+private[gf]
 object Scope {
   val empty = Scope(Nil)
 }
 
+private[gf]
 abstract sealed class MetaValue[S]
-case class MUnbound[S](s : S, scope : Scope, tty : TType, cs : List[Expr => TcM[S, Unit]]) extends MetaValue[S]
-case class MBound[S](e : Expr) extends MetaValue[S]
-case class MGuarded[S](e : Expr, cs : List[Expr => TcM[S, Unit]], x : Int) extends MetaValue[S] 
+private[gf] case class MUnbound[S](s : S, scope : Scope, tty : TType, cs : List[Expr => TcM[S, Unit]]) extends MetaValue[S]
+private[gf] case class MBound[S](e : Expr) extends MetaValue[S]
+private[gf] case class MGuarded[S](e : Expr, cs : List[Expr => TcM[S, Unit]], x : Int) extends MetaValue[S] 
 
+private[gf]
 abstract class Selector[S] {
   def splitSelector(s : S) : (S, S)
   def select(cid : CId, scope : Scope, x : Option[Int]) : TcM[S, (Expr, TType)]
 }
 
+private[gf]
 object Selector {
   implicit object FIdSelector extends Selector[FId] {
     def splitSelector(fid : FId) = (fid, fid)
@@ -53,6 +59,7 @@ object Selector {
   }  
 }
 
+private[gf]
 sealed abstract class TcM[S : Selector, A] {
   def apply[R](a : Abstr, k : A => (IntMap[MetaValue[S]], S) => R => R, h : (TcError, S) => R => R) : (IntMap[MetaValue[S]], S) => R => R
   
@@ -71,6 +78,7 @@ sealed abstract class TcM[S : Selector, A] {
         val (es, xs) = b; ((s, e) :: es, xs)})(ms, s)((List(), List()))
 }
 
+private[gf]
 class TcMMonad[S : Selector] extends Monad[TcM.T[S]#T]
 with MonadPlus[TcM.T[S]#T]
 with MonadState[TcM.T[S]#T, S]
@@ -119,6 +127,7 @@ with MonadError[TcM.T[S]#T, TcError] {
   }
 }
 
+private[gf]
 object TcM {
   type T[S] = {type T[a] = TcM[S,a]}
   
@@ -212,11 +221,17 @@ object TcM {
   }
   
   def addConstraint[S : Selector](i : MetaId, j : MetaId, c : Expr => TcM[S, Unit]) : TcM[S, Unit] = {
-    def addRef : TcM[S, Unit] = getMeta(i).flatMap { case MGuarded(e, cs, x) => setMeta(i, MGuarded(e, cs, x+1)) }
+    def addRef : TcM[S, Unit] = getMeta(i).flatMap { 
+      case MGuarded(e, cs, x) => setMeta(i, MGuarded(e, cs, x+1))
+      case MBound(_) => throw new Exception()
+      case MUnbound(_, _, _, _) => throw new Exception()
+    }
     def release : TcM[S, Unit] = getMeta(i).flatMap {
       case MGuarded(e, cs, x) => 
         if (x == 1) setMeta(i, MGuarded(e, cs, 0)) >> cs.map{c => c(e)}.sequence_[TcM.T[S]#T, Unit]
         else setMeta(i, MGuarded(e, cs, x-1))
+      case MBound(_) => throw new Exception()
+      case MUnbound(_, _, _, _) => throw new Exception()
     }
     getMeta(j).flatMap {
       case MUnbound(s, scope, tty, cs) => addRef >> setMeta(j, MUnbound(s, scope, tty, ((e : Expr) => release >> c(e)) :: cs))
@@ -228,7 +243,9 @@ object TcM {
   }
 }
 
+private[gf]
 object TypeCheck {
+  trait Fail[S] { def apply[A]() : TcM[S, A] }
   def lookupMeta[S](ms : IntMap[MetaValue[S]])(i : Int) = ms.get(i) match {
     case Some(MBound(t)) => Some(t)
     case Some(MGuarded(t, _, x)) => if (x == 0) Some(t) else None
@@ -240,8 +257,8 @@ object TypeCheck {
     for {
       (scope, hyps) <- tcHypos(scope, hyps)
       c_hyps <- TcM.lookupCatHyps(cat)
-      val m = es.length
-      val n = (for (Hypo(Explicit,x,ty) <- c_hyps) yield ty).length
+      m = es.length
+      n = (for (Hypo(Explicit,x,ty) <- c_hyps) yield ty).length
       (delta, es) <- tcCatArgs(scope, es, Nil, c_hyps, ty, n, m)
     } yield Type(hyps, cat, es)
   }
@@ -361,10 +378,11 @@ object TypeCheck {
         (if (x == wildCId && y == wildCId) eqHyps(k, delta1, h1s, delta2, h2s)
         else if (x != wildCId && y != wildCId) eqHyps(k+1, VGen(k, Nil) :: delta1, h1s, VGen(k, Nil) :: delta2, h2s)
         else raiseTypeMatchError)
+      case (_, _) => throw new Exception() 
     }
     if (cat1 == cat2) for {
       (k, delta1, delta2) <- eqHyps(k, delta1, hyps1, delta2, hyps2)
-      v <- (es1 zip es2).map {case (e1, e2) => eqExpr(new { def apply[A]() = raiseTypeMatchError[A] }, 
+      v <- (es1 zip es2).map {case (e1, e2) => eqExpr(new Fail[S]{ def apply[A]() = raiseTypeMatchError[A] }, 
           TcM.addConstraint(i0, _, _ : Expr => TcM[S, Unit]), k, delta1, e1, delta2, e2)}.sequence_[TcM.T[S]#T, Unit]
     } yield v 
     else raiseTypeMatchError
@@ -377,12 +395,12 @@ object TypeCheck {
       }
     case _ => (e, tty).pure[TcM.T[S]#T]
   }
-  def eqExpr[S : Selector](fail : { def apply[A]() : TcM[S, A] }, suspend : (MetaId, Expr => TcM[S, Unit]) => TcM[S, Unit], k : Int, env1 : Env, e1 : Expr, env2 : Env, e2 : Expr) : TcM[S, Unit] = for {
+  def eqExpr[S : Selector](fail : Fail[S], suspend : (MetaId, Expr => TcM[S, Unit]) => TcM[S, Unit], k : Int, env1 : Env, e1 : Expr, env2 : Env, e2 : Expr) : TcM[S, Unit] = for {
     v1 <- eval(env1, e1)
     v2 <- eval(env2, e2)
     v <- eqValue(fail, suspend, k, v1, v2)
   } yield v
-  def eqValue[S : Selector](fail : { def apply[A]() : TcM[S, A] }, suspend : (MetaId, Expr => TcM[S, Unit]) => TcM[S, Unit], k : Int, v1 : Value, v2 : Value) : TcM[S, Unit] = {
+  def eqValue[S : Selector](fail : Fail[S], suspend : (MetaId, Expr => TcM[S, Unit]) => TcM[S, Unit], k : Int, v1 : Value, v2 : Value) : TcM[S, Unit] = {
     def deRef(v : Value) : TcM[S, Value] = v match {
       case VMeta(i, env, vs) => TcM.getMeta(i).flatMap {
         case MBound(e) => apply(env, e, vs)
@@ -403,7 +421,7 @@ object TypeCheck {
       else for {
         v <- occurCheck(i, k, xs, v)
         e0 <- value2expr(xs.length, v)
-        val e = addLam(vs0, e0)
+        e = addLam(vs0, e0)
         () <- TcM.setMeta[S](i, MBound(e))
         r <- cs.map(c => c(e)).sequence_[TcM.T[S]#T, Unit]
       } yield r
@@ -435,10 +453,12 @@ object TypeCheck {
       case (VMeta(i, env1, vs1), v2) => TcM.getMeta(i).flatMap {
         case MUnbound(_, scopei, _, cs) => bind(i, scopei, cs, env1, vs1, v2)
         case MGuarded(e, cs, x) => TcM.setMeta(i, MGuarded(e, {(e:Expr) => apply(env1, e, vs1).flatMap(v1 => eqValue1(k, v1, v2))} :: cs, x))
+        case MBound(_) => throw new Exception()
       }
       case (v1, VMeta(i, env2, vs2)) => TcM.getMeta(i).flatMap {
         case MUnbound(_, scopei, _, cs) => bind(i, scopei, cs, env2, vs2, v1)
         case MGuarded(e, cs, x) => TcM.setMeta(i, MGuarded(e, {(e:Expr) => apply(env2, e, vs2).flatMap(v2 => eqValue1(k, v1, v2))} :: cs, x))
+        case MBound(_) => throw new Exception()
       }
       case (VApp(f1, vs1), VApp(f2, vs2)) if f1 == f2 => (vs1 zip vs2).traverse_[TcM.T[S]#T] { case(v1, v2) => eqValue(fail, suspend, k, v1, v2) }
       case (VConst(f1, vs1), VConst(f2, vs2)) if f1 == f2 => (vs1 zip vs2).traverse_[TcM.T[S]#T] { case(v1, v2) => eqValue(fail, suspend, k, v1, v2) }

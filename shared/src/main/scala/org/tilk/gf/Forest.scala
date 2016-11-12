@@ -4,6 +4,7 @@ import scala.collection.immutable.IntMap
 import scalaz._
 import Scalaz._
 
+private[gf]
 final case class Forest(abstr : Abstr, concr : Concr, forest : IntMap[Set[Production]], root : List[(List[Symbol], List[PArg])]) {
   def getAbsTrees(arg : PArg, ty : Option[Type], dp : Option[Int]) : Either[List[(FId, TcError)], List[Expr]] = {
     val M = TcM.TcMMonad[FId]
@@ -20,6 +21,7 @@ final case class Forest(abstr : Abstr, concr : Concr, forest : IntMap[Set[Produc
             else updateScope(hypos, scope.addScopedVar(x, TType(delta, ty)), 
                 mkAbs compose (e => EAbs(bt, x, e)), Some(TType(VGen(scope.size, Nil)::delta, Type(hs, c, es))))
           case None => (scope, mkAbs, None) 
+          case Some(_) => throw new Exception()
         }
     }
     def goArg(rec_ : Set[FId], scope : Scope, fid : FId, p : (Expr, TType), arg : PArg) : TcM[FId, (Expr, TType)] = {
@@ -28,7 +30,7 @@ final case class Forest(abstr : Abstr, concr : Concr, forest : IntMap[Set[Produc
       if (x == wildCId) {
         for {
           e2x <- z
-          val e2 = bt match {
+          e2 = bt match {
             case Explicit => e2x
             case Implicit => EImplArg(e2x)
           }
@@ -82,6 +84,7 @@ final case class Forest(abstr : Abstr, concr : Concr, forest : IntMap[Set[Produc
       def descend(p : Production) : Set[FId] = p match {
         case PApply(funid, args) => args.map(trustedSpots(parents1, _)).fold(Set.empty[FId])(_ union _)
         case PConst(c, e, _) => Set.empty
+        case PCoerce(_) => throw new Exception()
       }
       if (parg.fid < concr.totalCats || parents(parg.fid)) Set.empty
       else forest.get(parg.fid) match {

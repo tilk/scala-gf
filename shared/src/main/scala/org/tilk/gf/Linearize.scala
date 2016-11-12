@@ -2,6 +2,7 @@ package org.tilk.gf
 
 import scala.collection.immutable.IntMap
 
+private[gf]
 class Linearize(pgf : PGF, cnc : Concr) {
   def linTree(e : Expr) : List[Linearization] = lin(None, 0, e, Nil, Nil, e, Nil).map(_._2).distinct
   def ss(s : String) = Vector(List(BTLeafKS(s)))
@@ -36,6 +37,7 @@ class Linearize(pgf : PGF, cnc : Concr) {
           val (args, res) = ty.catSkeleton
           List((funid, (res, fid), args zip pargs.map(_.fid)))
         case PCoerce(fid) => prods.get(fid).map(_.toList.flatMap(toApp(fid, _))).getOrElse(Nil) 
+        case PConst(_, _, _) => throw new Exception();
       }
       mb_cty match {
         case Some((cat, fid)) => prods.get(fid).map(_.toList.flatMap(toApp(fid, _))).getOrElse(Nil)
@@ -55,7 +57,7 @@ class Linearize(pgf : PGF, cnc : Concr) {
     case Some((cat, fid)) => cnc.lindefs.get(fid) match {
       case Some(funs) => for {
         funid <- funs
-        val args = List(Linearization((wildCId, n_fid), fidString, wildCId, List(e0), LinTable(Nil, ss(s))))
+        args = List(Linearization((wildCId, n_fid), fidString, wildCId, List(e0), LinTable(Nil, ss(s))))
       } yield (n_fid+2, Linearization((cat, n_fid+1), fid, wildCId, List(e0), LinTable(cnc, _ => true, xs, funid, args)))
       case None => 
         if (isPredefFId(fid)) List((n_fid+2, Linearization((cat, n_fid+1), fid, wildCId, List(e0), LinTable(xs, ss(s)))))

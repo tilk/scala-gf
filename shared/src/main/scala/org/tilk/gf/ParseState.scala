@@ -3,6 +3,7 @@ package org.tilk.gf
 import scala.collection.immutable.{IntMap, SortedMap}
 import scala.util.Try
 
+private[gf]
 object ParseState {
   type Continuation = TrieMap[Token, Set[Active]]
   def apply(pgf : PGF, language : CId, tp : Type) : ParseState = {
@@ -185,9 +186,9 @@ object ParseState {
   def parse(pgf : PGF, lang : CId, typ : Type, dp : Option[Int], toks : List[Token]) = {
     def loop(ps : ParseState, toks : List[Token]) : (ParseOutput, BracketedString) = toks match {
       case Nil => ps.getOutput(typ, dp)
-      case t::ts => ps.next(ParseInput(t)) match {
-        case Right(ps) => loop(ps, ts)
-        case Left(es) => (ParseFailed(es.chart.offset), ps.getOutput(typ, dp)._2)
+      case t::ts => /*System.out.println("next token: " ++ t);*/ ps.next(ParseInput(t)) match {
+        case Right(ps) => /*System.out.println("ok");*/ loop(ps, ts)
+        case Left(es) => /*System.out.println("fail");*/ (ParseFailed(es.chart.offset), ps.getOutput(typ, dp)._2)
       }
     }
     loop(ParseState(pgf, lang, typ), toks)
@@ -205,10 +206,14 @@ case class ParseTypeError(errors : List[(FId, TcError)]) extends ParseOutput
 case class ParseOk(out : List[Expr]) extends ParseOutput
 case object ParseIncomplete extends ParseOutput
 
+private[gf]
 final case class ErrorState(abstr : Abstr, concr : Concr, chart : Chart)
 
+private[gf]
 final case class ParseState(abstr : Abstr, concr : Concr, chart : Chart, cont : ParseState.Continuation) {
   def next(input : ParseInput) : Either[ErrorState, ParseState] = {
+//    System.out.println("nextState chart: " ++ chart.toString)
+//    System.out.println("nextState cont: " ++ cont.toString)
     val agenda = cont.value.map(_.toList).getOrElse(List())
     val cnt = input.token(cont.children).getOrElse(TrieMap.empty)
     def ftok(choices : SortedMap[Token, ParseState.Continuation], cnt : ParseState.Continuation) = input.token(choices) match {
@@ -244,6 +249,9 @@ final case class ParseState(abstr : Abstr, concr : Concr, chart : Chart, cont : 
     }
     val froots = if (roots.isEmpty) ParseState.getPartialSeq(concr.sequences, (chart.active::chart.actives).reverse, seq)
       else (for (ActiveKey(fid, lbl) <- roots) yield (List(SymCat(0, lbl)), List(PArg(List(), fid)))).toList 
+//    System.out.println(chart1)
+//    System.out.println(roots)
+//    System.out.println(froots)
     val f = Forest(abstr, concr, chart1.forest, froots)
     val xs = roots.map(ak => f.getAbsTrees(PArg(Nil, ak.fid), Some(tp), dp))
     val es = List.concat(xs.collect { case Right(es) => es }:_*)
@@ -268,12 +276,15 @@ object ParseInput {
   }
 }
 
+private[gf]
 final case class Active(val j : Int, val ppos : DotPos, val funid : FunId, val seqid : SeqId, val args : List[PArg], val key : ActiveKey)
 
+private[gf]
 final case class ActiveKey(val fid : FId, val lbl : LIndex) {
   def makePassive(j : Int) = PassiveKey(fid, lbl, j)
 }
 
+private[gf]
 object ActiveKey {
   implicit object ActiveKeyOrdering extends Ordering[ActiveKey] {
     override def compare(a : ActiveKey, b: ActiveKey) : Int = {
@@ -283,8 +294,10 @@ object ActiveKey {
   }
 }
 
+private[gf]
 final case class PassiveKey(val fid : FId, val lbl : LIndex, val j : Int)
 
+private[gf]
 object Chart {
   type ActiveChart = SortedMap[ActiveKey, (Set[Active], IntMap[Set[Production]])]
   type PassiveChart = Map[PassiveKey, FId]
@@ -292,6 +305,7 @@ object Chart {
   val emptyPassive : PassiveChart = Map.empty
 }
 
+private[gf]
 final case class Chart(
     val active : Chart.ActiveChart,
     val actives : List[Chart.ActiveChart],
