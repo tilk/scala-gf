@@ -184,11 +184,11 @@ object ParseState {
     expand(Set.empty, seq)
   }
   def parse(pgf : PGF, lang : CId, typ : Type, dp : Option[Int], toks : List[Token]) = {
-    def loop(ps : ParseState, toks : List[Token]) : (ParseOutput, BracketedString) = toks match {
+    def loop(ps : ParseState, toks : List[Token]) : (ParseOutput, () => BracketedString) = toks match {
       case Nil => ps.getOutput(typ, dp)
-      case t::ts => /*System.out.println("next token: " ++ t);*/ ps.next(ParseInput(t)) match {
-        case Right(ps) => /*System.out.println("ok");*/ loop(ps, ts)
-        case Left(es) => /*System.out.println("fail");*/ (ParseFailed(es.chart.offset), ps.getOutput(typ, dp)._2)
+      case t::ts => ps.next(ParseInput(t)) match {
+        case Right(ps) => loop(ps, ts)
+        case Left(es) => (ParseFailed(es.chart.offset), ps.getOutput(typ, dp)._2)
       }
     }
     loop(ParseState(pgf, lang, typ), toks)
@@ -226,7 +226,7 @@ final case class ParseState(abstr : Abstr, concr : Concr, chart : Chart, cont : 
     if (cnt1.isEmpty) Left(ErrorState(abstr, concr, chart2))
     else Right(ParseState(abstr, concr, chart2, cnt1))
   }
-  def getOutput(tp : Type, dp : Option[Int]) = {
+  def getOutput(tp : Type, dp : Option[Int]) : (ParseOutput, () => BracketedString) = {
     val agenda = cont.value.map(_.toList).getOrElse(Nil)
     def flit(fid : FId) = None
     def ftok(toks : SortedMap[Token, ParseState.Continuation], c : ParseState.Continuation) = TrieMap(None, toks).unionWith(c, _ union _)
@@ -256,11 +256,10 @@ final case class ParseState(abstr : Abstr, concr : Concr, chart : Chart, cont : 
     val xs = roots.map(ak => f.getAbsTrees(PArg(Nil, ak.fid), Some(tp), dp))
     val es = List.concat(xs.collect { case Right(es) => es }:_*)
     val errs = List.concat(xs.collect { case Left(es) => es }:_*)
-    val bs = f.linearizeWithBrackets(dp)
     val res = if (!es.isEmpty) ParseOk(es)
       else if (!errs.isEmpty) ParseTypeError(errs)
       else ParseIncomplete
-    (res, bs)
+    (res, () => f.linearizeWithBrackets(dp))
   }
 }
 

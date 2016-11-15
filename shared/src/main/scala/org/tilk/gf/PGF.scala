@@ -74,8 +74,10 @@ case class PGF(
   def startType = Type(Nil, startCat, Nil)
   def getConcrComplete(id : CId) : Option[Concr] = 
     concr.get(id).orElse(concr.get(CId(absname.value + id.value)))
-  def parse(lang : CId, s : String, typ : Type = startType, dp : Option[Int] = Some(4)) : (ParseOutput, BracketedString) = 
-    ParseState.parse(this, lang, typ, dp, s.split(' ').toList)
+  def parseWithBracketing(lang : CId, s : String, typ : Type = startType, dp : Option[Int] = Some(4)) : (ParseOutput, BracketedString) = 
+    ParseState.parse(this, lang, typ, dp, s.split(' ').toList).map(f => f())
+  def parse(lang : CId, s : String, typ : Type = startType) =
+    ParseState.parse(this, lang, typ, None, s.split(' ').toList)._1
   def linearize(lang : CId, e : Expr) = bracketedLinearize(lang, e).flatMap(_.flatten).mkString(" ")
   def bracketedLinearize(lang : CId, e : Expr) = {
     val cnc = getConcrComplete(lang).get
