@@ -1,4 +1,4 @@
-package org.tilk
+package eu.tilk
 
 package object gf {
   type FId = Int

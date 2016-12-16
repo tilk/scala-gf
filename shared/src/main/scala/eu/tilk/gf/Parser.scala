@@ -1,4 +1,4 @@
-package org.tilk.gf
+package eu.tilk.gf
 
 import fastparse.byte.all._
 import java.nio.charset.Charset

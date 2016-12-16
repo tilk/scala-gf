@@ -1,4 +1,4 @@
-package org.tilk.gf
+package eu.tilk.gf
 
 final case class Type(val hyps : List[Hypo], val start : CId, val exprs : List[Expr]) {
   def contextLength = hyps.length

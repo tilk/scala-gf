@@ -1,4 +1,4 @@
-package org.tilk.gf
+package eu.tilk.gf
 
 import scala.collection.immutable.{IntMap, SortedMap}
 
