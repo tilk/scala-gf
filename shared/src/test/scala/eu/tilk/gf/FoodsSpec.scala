@@ -1,4 +1,4 @@
-package org.tilk.gf
+package eu.tilk.gf
 
 class FoodsSpec extends UnitSpec {
   val is = getClass.getResourceAsStream("/Foods.pgf")

@@ -1,4 +1,4 @@
-package org.tilk.gf
+package eu.tilk.gf
 
 abstract sealed class Literal
 case class LStr(val value : String) extends Literal

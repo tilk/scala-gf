@@ -1,4 +1,4 @@
-package org.tilk.gf
+package eu.tilk.gf
 
 abstract sealed class BindType
 case object Implicit extends BindType
