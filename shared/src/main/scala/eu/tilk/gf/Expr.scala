@@ -75,6 +75,13 @@ case object PWild extends Patt
 case class PImplArg(val patt : Patt) extends Patt
 case class PTilde(val expr : Expr) extends Patt
 
+abstract sealed class Step
+case object SAbs extends Step
+case object SAppL extends Step
+case object SAppR extends Step
+case object STyped extends Step
+case object SImplArg extends Step
+
 final case class Equation(pats : List[Patt], expr : Expr)
 
 object Equation {

@@ -11,6 +11,7 @@ package object gf {
   type DotPos = Int
   type Env = List[Value]
   type CncType = (CId, FId)
+  type Loc = List[Step]
   val fidString : FId = -1
   val fidInt : FId = -2
   val fidFloat : FId = -3
