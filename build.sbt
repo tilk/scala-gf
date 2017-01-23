@@ -1,4 +1,5 @@
-scalaVersion in ThisBuild := "2.11.8"
+scalaVersion in ThisBuild := "2.12.1"
+crossScalaVersions in ThisBuild := Seq("2.11.8", "2.12.1")
 
 import ReleaseTransformations._
 
@@ -22,14 +23,13 @@ val gf = crossProject.in(file("."))
         name := "Scala GF",
         normalizedName := "scala-gf",
         libraryDependencies ++= Seq(
-            "com.lihaoyi" %%% "fastparse-byte" % "0.4.1",
+            "com.lihaoyi" %%% "fastparse-byte" % "0.4.2",
             "org.scalaz" %%% "scalaz-core" % "7.2.7",
             "org.scalatest" %% "scalatest" % "3.0.0" % "test"
         ),
         scalaJSStage in Global := FullOptStage,
         organization := "eu.tilk",
         version := "0.0.1-SNAPSHOT",
-        scalaVersion := "2.11.8",
         licenses += ("LGPL 3.0", url("https://opensource.org/licenses/LGPL-3.0")),
         scmInfo := Some(ScmInfo(
             url("https://github.com/tilk/scala-gf"),
