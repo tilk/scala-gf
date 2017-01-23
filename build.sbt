@@ -29,7 +29,7 @@ val gf = crossProject.in(file("."))
         ),
         scalaJSStage in Global := FullOptStage,
         organization := "eu.tilk",
-        version := "0.0.1-SNAPSHOT",
+        version := "0.0.2-SNAPSHOT",
         licenses += ("LGPL 3.0", url("https://opensource.org/licenses/LGPL-3.0")),
         scmInfo := Some(ScmInfo(
             url("https://github.com/tilk/scala-gf"),

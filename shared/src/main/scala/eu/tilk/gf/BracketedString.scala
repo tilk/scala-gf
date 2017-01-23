@@ -14,11 +14,11 @@ sealed abstract class BracketedString {
   }
 }
 case class BSLeaf(token : Token) extends BracketedString
-case class BSBracket(id : CId, fid : FId, idx : LIndex, cid2 : CId, exprs : List[Expr], substrings : List[BracketedString]) extends BracketedString
+case class BSBracket(id : CId, fid : FId, idx : LIndex, cid2 : CId, exprs : List[(Loc, Expr)], substrings : List[BracketedString]) extends BracketedString
 
 private[gf]
 sealed abstract class BracketedToken
-private[gf] case class BTBracket(cid : CId, fid : FId, idx : LIndex, cid2 : CId, exprs : List[Expr], subtokens : List[BracketedToken]) extends BracketedToken
+private[gf] case class BTBracket(cid : CId, fid : FId, idx : LIndex, cid2 : CId, exprs : List[(Loc, Expr)], subtokens : List[BracketedToken]) extends BracketedToken
 private[gf] case class BTLeafKS(token : Token) extends BracketedToken
 private[gf] case object BTLeafNE extends BracketedToken
 private[gf] case object BTLeafBind extends BracketedToken
@@ -62,7 +62,7 @@ private[gf]
 final case class LinTable(val cids : List[CId], val toks : Vector[List[BracketedToken]])
 
 private[gf]
-final case class Linearization(val ct : CncType, val fid : FId, val fun : CId, val es : List[Expr], val table : LinTable) {
+final case class Linearization(val ct : CncType, val fid : FId, val fun : CId, val es : List[(Loc, Expr)], val table : LinTable) {
   def firstLin(cnc : Concr) = cnc.linrefs.get(fid) match {
     case Some(funid::_) => LinTable(cnc, _ => true, Nil, funid, List(this)).toks(0)
     case _ => List(BTLeafKS(""))
